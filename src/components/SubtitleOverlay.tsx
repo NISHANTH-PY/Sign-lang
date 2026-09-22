@@ -164,10 +164,10 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
         {/* Top meta tags */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 select-none">
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Live Subtitle Tag */}
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider uppercase bg-red-500/20 text-red-400 border border-red-500/30">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              LIVE CC
+            {/* Live Subtitle Tag - Green indicates active camera & real-time interpreter */}
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              LIVE CC ACTIVE
             </span>
 
             {/* Continuous Signing Status Badge */}

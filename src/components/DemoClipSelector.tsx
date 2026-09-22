@@ -14,6 +14,14 @@ interface DemoPreset {
 export const MULTI_LANG_DEMO_PRESETS: DemoPreset[] = [
   // ASL
   {
+    term: 'Welcome Everyone (ASL)',
+    gloss: 'WELCOME EVERYONE',
+    subtitle: 'Welcome everyone, nice to see you all!',
+    description: 'Open flat hands sweep inward with an inviting gesture towards the chest.',
+    signLanguage: 'ASL',
+    twoHanded: true,
+  },
+  {
     term: 'Thank You (ASL)',
     gloss: 'THANK-YOU',
     subtitle: 'Thank you very much!',

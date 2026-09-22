@@ -85,3 +85,43 @@ export interface DictionaryItem {
   symbolEmoji: string;
   isTwoHanded?: boolean;
 }
+
+export type MediaInputMode = 'live-camera' | 'image' | 'video' | 'generate-video';
+
+export interface ImageTranslationStep {
+  step: number;
+  sign: string;
+  handshape: string;
+  movement?: string;
+  meaning: string;
+}
+
+export interface ImageTranslationResult {
+  translatedText: string;
+  glossSequence: string[];
+  confidence: 'high' | 'medium' | 'low';
+  signLanguage: SignLanguageId;
+  stepBreakdown: ImageTranslationStep[];
+  notes?: string;
+  imageUrl?: string;
+  timestamp: number;
+}
+
+export interface VideoTimelineCue {
+  timeSec: number;
+  gloss: string;
+  text: string;
+}
+
+export interface VideoTranslationResult {
+  translatedText: string;
+  fullTranscript: string;
+  glossSequence: string[];
+  timeline: VideoTimelineCue[];
+  confidence: 'high' | 'medium' | 'low';
+  signLanguage: SignLanguageId;
+  summary?: string;
+  videoUrl?: string;
+  videoDuration?: number;
+  timestamp: number;
+}

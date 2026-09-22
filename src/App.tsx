@@ -6,12 +6,16 @@ import { TranscriptHistory } from './components/TranscriptHistory';
 import { PhoneCompanionModal } from './components/PhoneCompanionModal';
 import { SignGuideModal } from './components/SignGuideModal';
 import { DemoClipSelector } from './components/DemoClipSelector';
+import { ImageSignTranslator } from './components/ImageSignTranslator';
+import { VideoSignTranslator } from './components/VideoSignTranslator';
+import { HandSignVideoGenerator } from './components/HandSignVideoGenerator';
 import {
   SignTranslationResult,
   SubtitleSettings,
   TranscriptItem,
   DictionaryItem,
   SignLanguageId,
+  MediaInputMode,
 } from './types';
 import { SUPPORTED_SIGN_LANGUAGES } from './data/signLanguages';
 import {
@@ -24,6 +28,10 @@ import {
   Info,
   Layers,
   Zap,
+  Camera,
+  Image as ImageIcon,
+  Film,
+  Wand2,
 } from 'lucide-react';
 
 export default function App() {
@@ -60,6 +68,9 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [lastLatencyMs, setLastLatencyMs] = useState<number>(320);
 
+  // Mode selection: Live Camera vs Image Translation vs Video Translation
+  const [mediaInputMode, setMediaInputMode] = useState<MediaInputMode>('live-camera');
+
   // Modals & simulation
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState<boolean>(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState<boolean>(false);
@@ -82,6 +93,21 @@ export default function App() {
     currentSentenceRef.current = currentSentence;
   }, [currentSentence]);
 
+  // Audio gesture unlock for browser autoplay policy
+  useEffect(() => {
+    const unlockSpeech = () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.resume();
+      }
+    };
+    window.addEventListener('click', unlockSpeech, { once: true });
+    window.addEventListener('touchstart', unlockSpeech, { once: true });
+    return () => {
+      window.removeEventListener('click', unlockSpeech);
+      window.removeEventListener('touchstart', unlockSpeech);
+    };
+  }, []);
+
   const activeLangInfo =
     SUPPORTED_SIGN_LANGUAGES.find((l) => l.id === activeSignLanguage) ||
     SUPPORTED_SIGN_LANGUAGES[0];
@@ -94,25 +120,35 @@ export default function App() {
   const speakSubtitle = useCallback(
     async (text: string) => {
       if (!text || text.trim() === '') return;
-      if (lastSpokenTextRef.current === text.trim()) return;
-      lastSpokenTextRef.current = text.trim();
+      const cleanText = text.trim();
+      if (lastSpokenTextRef.current === cleanText) return;
+      lastSpokenTextRef.current = cleanText;
 
       setIsSpeaking(true);
 
       if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = settings.speechRate || 1.0;
-        utterance.pitch = 1.0;
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onerror = () => setIsSpeaking(false);
-        window.speechSynthesis.speak(utterance);
+        try {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.resume();
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          utterance.rate = settings.speechRate || 1.0;
+          utterance.pitch = 1.0;
+          utterance.onend = () => setIsSpeaking(false);
+          utterance.onerror = (e) => {
+            console.warn('SpeechSynthesis error:', e.error || 'speech failed');
+            setIsSpeaking(false);
+          };
+          window.speechSynthesis.speak(utterance);
+        } catch (err: any) {
+          console.warn('SpeechSynthesis exception:', err?.message || 'speech exception');
+          setIsSpeaking(false);
+        }
       } else {
         try {
           const res = await fetch('/api/speak', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
+            body: JSON.stringify({ text: cleanText }),
           });
           const data = await res.json();
           if (data.audioBase64) {
@@ -210,13 +246,14 @@ export default function App() {
 
         if (resData.success && resData.data) {
           const data = resData.data;
+          const detectedSubtitle = (data.subtitle || '').trim() || (data.detected && data.gloss ? data.gloss : '');
 
           const result: SignTranslationResult = {
-            detected: data.detected,
+            detected: Boolean(data.detected),
             gloss: data.gloss || '',
-            subtitle: data.subtitle || currentSentenceRef.current,
+            subtitle: detectedSubtitle || currentSentenceRef.current,
             currentWord: data.currentWord,
-            confidence: data.confidence || 'medium',
+            confidence: data.confidence || 'high',
             gestureDescription: data.gestureDescription,
             handStatus: data.handStatus || 'resting',
             signLanguage: activeSignLanguage,
@@ -229,29 +266,32 @@ export default function App() {
 
           setCurrentResult(result);
 
-          if (data.detected && data.gloss) {
+          if (data.detected) {
             consecutiveRestCountRef.current = 0;
+            const newGloss = (data.gloss || '').trim().toUpperCase();
 
             // Append new sign to sequence if not duplicate of immediately preceding sign
-            const lastGloss = activeGlossSeqRef.current[activeGlossSeqRef.current.length - 1];
-            if (data.gloss !== lastGloss) {
-              setActiveGlossSequence((prev) => [...prev, data.gloss]);
+            if (newGloss) {
+              const lastGloss = activeGlossSeqRef.current[activeGlossSeqRef.current.length - 1];
+              if (newGloss !== lastGloss) {
+                setActiveGlossSequence((prev) => [...prev, newGloss]);
+              }
             }
 
-            if (data.subtitle) {
-              setCurrentSentence(data.subtitle);
+            if (detectedSubtitle) {
+              setCurrentSentence(detectedSubtitle);
             }
 
-            // If model recognized sentence completion, finalize it
-            if (data.isSentenceComplete && data.subtitle) {
-              finalizeCurrentSentence(data.subtitle);
+            // If model recognized sentence completion, finalize it and speak
+            if (data.isSentenceComplete && detectedSubtitle) {
+              finalizeCurrentSentence(detectedSubtitle);
             }
           } else {
             // Hands at rest
             if (currentSentenceRef.current) {
               consecutiveRestCountRef.current += 1;
-              // If hands have rested for 2 consecutive intervals, finalize accumulated sentence
-              if (consecutiveRestCountRef.current >= 2) {
+              // If hands have rested for 1 interval, finalize accumulated sentence
+              if (consecutiveRestCountRef.current >= 1) {
                 finalizeCurrentSentence(currentSentenceRef.current);
               }
             }
@@ -319,6 +359,27 @@ export default function App() {
     setAutoTranslate(true);
   };
 
+  const handleAddTranslatedItem = (subtitle: string, gloss: string, signLang: SignLanguageId) => {
+    const nowObj = new Date();
+    const formattedTime = nowObj.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const newTranscript: TranscriptItem = {
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: Date.now(),
+      timeFormatted: formattedTime,
+      subtitle,
+      gloss: gloss || 'SIGN',
+      confidence: 'high',
+      signSystem: `${signLang} Media Translation`,
+      signLanguage: signLang,
+      wordsCount: subtitle.split(/\s+/).length,
+    };
+    setTranscripts((prev) => [newTranscript, ...prev.slice(0, 49)]);
+  };
+
   return (
     <div className="min-h-screen bg-[#080B12] text-neutral-100 font-sans selection:bg-indigo-500 selection:text-white">
       {/* Top Navbar */}
@@ -340,7 +401,7 @@ export default function App() {
                 </span>
               </div>
               <p className="text-[11px] text-neutral-400 hidden sm:block">
-                Continuous Sign Language Sentence Translation for Laptop & Phone Cameras
+                Continuous Sign Language Sentence Translation for Live Camera, Photos & Videos
               </p>
             </div>
           </div>
@@ -405,41 +466,140 @@ export default function App() {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Cinema Video Camera Section with Live Continuous Subtitle Overlay */}
-        <section className="relative w-full">
-          <CameraFeed
-            onFrameCapture={handleFrameCapture}
-            isProcessing={isProcessing}
-            autoTranslate={autoTranslate}
-            cadenceSeconds={settings.autoTranslateCadence}
-            onOpenPhoneModal={() => setIsPhoneModalOpen(true)}
-            onOpenGuideModal={() => setIsGuideModalOpen(true)}
-            demoVideoActive={demoVideoActive}
-            onToggleDemoVideo={setDemoVideoActive}
-            selectedDemoGesture={selectedDemoGesture}
-            showAlignmentGuide={settings.showAlignmentGuide}
-            latencyMs={lastLatencyMs}
-          />
+        {/* Media Translation Mode Switcher Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-900/60 p-2 rounded-2xl border border-neutral-800">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <button
+              onClick={() => setMediaInputMode('live-camera')}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all ${
+                mediaInputMode === 'live-camera'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 ring-1 ring-indigo-400'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800'
+              }`}
+            >
+              <Camera className="w-4 h-4" />
+              <span>Live Camera</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+            </button>
 
-          {/* Floating Continuous Subtitle Overlay */}
-          <SubtitleOverlay
-            currentResult={currentResult}
-            settings={settings}
-            isSpeaking={isSpeaking}
-            onManualSpeak={speakSubtitle}
+            <button
+              onClick={() => setMediaInputMode('image')}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all ${
+                mediaInputMode === 'image'
+                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 ring-1 ring-cyan-400'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800'
+              }`}
+            >
+              <ImageIcon className="w-4 h-4" />
+              <span>Translate Image</span>
+            </button>
+
+            <button
+              onClick={() => setMediaInputMode('video')}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all ${
+                mediaInputMode === 'video'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 ring-1 ring-purple-400'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800'
+              }`}
+            >
+              <Film className="w-4 h-4" />
+              <span>Translate Video</span>
+            </button>
+
+            <button
+              onClick={() => setMediaInputMode('generate-video')}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all ${
+                mediaInputMode === 'generate-video'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30 ring-1 ring-purple-400'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800'
+              }`}
+            >
+              <Wand2 className="w-4 h-4 text-amber-300" />
+              <span>Generate Sign Video</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                AI
+              </span>
+            </button>
+          </div>
+
+          <div className="text-xs text-neutral-400 flex items-center gap-2 px-2">
+            <span>Target: <strong className="text-white">{settings.targetSpokenLanguage}</strong></span>
+            <span className="text-neutral-600">|</span>
+            <span>Sign: <strong className="text-indigo-300">{activeLangInfo.name}</strong></span>
+          </div>
+        </div>
+
+        {/* View Mode 1: Live Camera Feed with Subtitle Overlay */}
+        {mediaInputMode === 'live-camera' && (
+          <>
+            <section className="relative w-full">
+              <CameraFeed
+                onFrameCapture={handleFrameCapture}
+                isProcessing={isProcessing}
+                autoTranslate={autoTranslate}
+                cadenceSeconds={settings.autoTranslateCadence}
+                onOpenPhoneModal={() => setIsPhoneModalOpen(true)}
+                onOpenGuideModal={() => setIsGuideModalOpen(true)}
+                demoVideoActive={demoVideoActive}
+                onToggleDemoVideo={setDemoVideoActive}
+                selectedDemoGesture={selectedDemoGesture}
+                showAlignmentGuide={settings.showAlignmentGuide}
+                latencyMs={lastLatencyMs}
+              />
+
+              {/* Floating Continuous Subtitle Overlay */}
+              <SubtitleOverlay
+                currentResult={currentResult}
+                settings={settings}
+                isSpeaking={isSpeaking}
+                onManualSpeak={speakSubtitle}
+                activeSignLanguage={activeSignLanguage}
+                activeGlossSequence={activeGlossSequence}
+                isContinuousActive={Boolean(currentSentence)}
+              />
+            </section>
+
+            {/* Multi-Language Instant Simulation & Sign Testing Bar */}
+            <DemoClipSelector
+              onSelectDemo={handleSelectDemo}
+              isProcessing={isProcessing}
+              activeSignLanguage={activeSignLanguage}
+              onChangeSignLanguage={setActiveSignLanguage}
+            />
+          </>
+        )}
+
+        {/* View Mode 2: Image Sign Translator (Photos, Diagrams, Charts) */}
+        {mediaInputMode === 'image' && (
+          <ImageSignTranslator
             activeSignLanguage={activeSignLanguage}
-            activeGlossSequence={activeGlossSequence}
-            isContinuousActive={Boolean(currentSentence)}
+            targetLanguage={settings.targetSpokenLanguage}
+            onAddToTranscripts={handleAddTranslatedItem}
+            onSpeakText={speakSubtitle}
           />
-        </section>
+        )}
 
-        {/* Multi-Language Instant Simulation & Sign Testing Bar */}
-        <DemoClipSelector
-          onSelectDemo={handleSelectDemo}
-          isProcessing={isProcessing}
-          activeSignLanguage={activeSignLanguage}
-          onChangeSignLanguage={setActiveSignLanguage}
-        />
+        {/* View Mode 3: Video Sign Translator (Uploaded MP4/WebM/MOV) */}
+        {mediaInputMode === 'video' && (
+          <VideoSignTranslator
+            activeSignLanguage={activeSignLanguage}
+            targetLanguage={settings.targetSpokenLanguage}
+            onAddToTranscripts={handleAddTranslatedItem}
+            onSpeakText={speakSubtitle}
+          />
+        )}
+
+        {/* View Mode 4: Hand Sign Video Generator Studio */}
+        {mediaInputMode === 'generate-video' && (
+          <HandSignVideoGenerator
+            activeSignLanguage={activeSignLanguage}
+            targetLanguage={settings.targetSpokenLanguage}
+            onOpenInVideoTranslator={() => {
+              setMediaInputMode('video');
+            }}
+            onSpeakText={speakSubtitle}
+          />
+        )}
 
         {/* Bottom Control & Log Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

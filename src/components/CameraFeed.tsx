@@ -16,6 +16,9 @@ import {
   Eye,
   Activity,
   Layers,
+  Lock,
+  ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 import { VideoDeviceOption } from '../types';
 
@@ -127,7 +130,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({
         videoRef.current.srcObject = newStream;
         videoRef.current.play().catch((playErr: any) => {
           if (playErr.name !== 'AbortError') {
-            console.warn('Video playback warning:', playErr);
+            console.warn('Video playback warning:', playErr?.message || 'playback issue');
           }
         });
       }
@@ -142,12 +145,12 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({
       await refreshDevices();
     } catch (err: any) {
       if (err.name === 'AbortError') return;
-      console.error('Camera access error:', err);
+      console.warn('Camera access status:', err?.name, err?.message);
       setHasPermission(false);
       setErrorMessage(
-        err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Please allow camera access in your browser address bar.'
-          : err.name === 'NotFoundError'
+        err.name === 'NotAllowedError' || err?.message?.toLowerCase().includes('permission') || err?.message?.toLowerCase().includes('denied')
+          ? 'Camera permission was not granted. Follow the steps below to allow camera access in your browser.'
+          : err.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
           ? 'No camera found. Connect a webcam or scan the QR code to use your phone camera.'
           : `Camera error: ${err.message || 'Unable to open camera feed.'}`
       );
@@ -310,28 +313,62 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({
           </div>
         ) : hasPermission === false ? (
           /* Error / Permission Denied State */
-          <div className="flex flex-col items-center justify-center p-8 text-center max-w-md">
-            <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center mb-4 text-rose-400">
-              <VideoOff className="w-8 h-8" />
+          <div className="flex flex-col items-center justify-center p-5 sm:p-7 text-center max-w-lg mx-auto my-auto space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
+              <ShieldAlert className="w-7 h-7" />
             </div>
-            <h3 className="text-lg font-bold text-white mb-2">Camera Feed Unavailable</h3>
-            <p className="text-xs text-neutral-400 mb-6 leading-relaxed">
-              {errorMessage || 'Allow camera access in your browser or connect your phone as a portable signer camera.'}
-            </p>
-            <div className="flex flex-wrap gap-3 justify-center">
+
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-white">Camera Access Permission Required</h3>
+              <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto leading-relaxed">
+                SignStream AI needs your camera to see hand movements and generate live subtitles.
+              </p>
+            </div>
+
+            {/* Quick Unblock Instructions */}
+            <div className="w-full bg-neutral-900/90 border border-neutral-800 rounded-2xl p-3.5 text-left text-xs space-y-2">
+              <div className="flex items-center gap-1.5 font-semibold text-neutral-200 text-[11px] uppercase tracking-wider">
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                How to Enable Camera in 3 Steps:
+              </div>
+              <ol className="text-neutral-300 text-[11px] space-y-1.5 list-decimal list-inside leading-normal">
+                <li>
+                  Look at your browser’s address bar at the top and tap the <span className="font-semibold text-white">Lock (🔒)</span> or <span className="font-semibold text-white">Settings / Tune icon</span>.
+                </li>
+                <li>
+                  Tap <span className="font-semibold text-white">Permissions</span> (or <span className="font-semibold text-white">Site settings</span>) ➔ set <span className="font-semibold text-amber-300">Camera</span> to <span className="font-semibold text-emerald-400">Allow</span>.
+                </li>
+                <li>
+                  Tap the <span className="font-semibold text-indigo-300">"Enable Camera / Try Again"</span> button below.
+                </li>
+              </ol>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-2.5 justify-center w-full pt-1">
               <button
                 onClick={startCamera}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-lg shadow-indigo-600/20"
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/30 active:scale-95"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                Retry Camera
+                Enable Camera / Try Again
               </button>
+
+              <button
+                onClick={() => onToggleDemoVideo(true)}
+                className="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-2 transition-colors active:scale-95"
+                title="Test signing subtitles and text-to-speech right now without camera"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Try Practice Simulation
+              </button>
+
               <button
                 onClick={onOpenPhoneModal}
-                className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold flex items-center gap-2 border border-neutral-700 transition-colors"
+                className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium flex items-center gap-1.5 border border-neutral-700 transition-colors"
               >
                 <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-                Use Phone Camera
+                Phone Camera Mode
               </button>
             </div>
           </div>
