@@ -1,0 +1,11 @@
+{
+  "name": "SignStream AI - Live Sign Language Subtitle Translator",
+  "description": "Translate live sign language into real-time subtitles using your laptop webcam and phone camera.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
